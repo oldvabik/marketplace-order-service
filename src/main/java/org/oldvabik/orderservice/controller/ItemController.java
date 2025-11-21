@@ -30,8 +30,9 @@ public class ItemController {
     @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
     @GetMapping
     public ResponseEntity<Page<ItemDto>> getItems(@RequestParam(defaultValue = "0") Integer page,
-                                                  @RequestParam(defaultValue = "5") Integer size) {
-        Page<ItemDto> items = itemService.getItems(page, size);
+                                                  @RequestParam(defaultValue = "5") Integer size,
+                                                  @RequestParam(required = false) String name) {
+        Page<ItemDto> items = itemService.getItems(page, size, name);
         return new ResponseEntity<>(items, HttpStatus.OK);
     }
 
@@ -39,13 +40,6 @@ public class ItemController {
     @GetMapping("/{id}")
     public ResponseEntity<ItemDto> getItemById(@PathVariable Long id) {
         ItemDto item = itemService.getItemById(id);
-        return new ResponseEntity<>(item, HttpStatus.OK);
-    }
-
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
-    @GetMapping("/by-name")
-    public ResponseEntity<ItemDto> getItemByName(@RequestParam String name) {
-        ItemDto item = itemService.getItemByName(name);
         return new ResponseEntity<>(item, HttpStatus.OK);
     }
 

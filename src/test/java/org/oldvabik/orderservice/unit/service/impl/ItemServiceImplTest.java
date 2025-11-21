@@ -16,9 +16,10 @@ import org.oldvabik.orderservice.repository.ItemRepository;
 import org.oldvabik.orderservice.service.impl.ItemServiceImpl;
 import org.springframework.data.domain.*;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,17 +35,18 @@ class ItemServiceImplTest {
 
     private static final Long ID = 1L;
     private static final String NAME = "Laptop";
-    private static final String NEW_NAME = "Gaming PC";
+    private static final String NEW_NAME = "Gaming Laptop";
+    private static final String SEARCH_QUERY = "top";
     private static final BigDecimal PRICE = BigDecimal.valueOf(1299.99);
 
     @Test
     void createItem_success() {
-        ItemCreateDto dto = new ItemCreateDto();
+        var dto = new ItemCreateDto();
         dto.setName(NAME);
         dto.setPrice(PRICE);
 
-        Item entity = new Item();
-        Item saved = new Item();
+        var entity = new Item();
+        var saved = new Item();
         saved.setId(ID);
         saved.setName(NAME);
         saved.setPrice(PRICE);
@@ -56,7 +58,6 @@ class ItemServiceImplTest {
 
         ItemDto result = itemService.createItem(dto);
 
-        assertNotNull(result);
         assertEquals(ID, result.getId());
         assertEquals(NAME, result.getName());
         verify(itemRepository).save(entity);
@@ -64,168 +65,136 @@ class ItemServiceImplTest {
 
     @Test
     void createItem_nameAlreadyExists_throwsException() {
-        ItemCreateDto dto = new ItemCreateDto();
+        var dto = new ItemCreateDto();
         dto.setName(NAME);
-        dto.setPrice(PRICE);
 
         when(itemRepository.findByName(NAME)).thenReturn(Optional.of(new Item()));
 
-        AlreadyExistsException ex = assertThrows(AlreadyExistsException.class,
-                () -> itemService.createItem(dto));
-
+        var ex = assertThrows(AlreadyExistsException.class, () -> itemService.createItem(dto));
         assertTrue(ex.getMessage().contains(NAME));
         verify(itemRepository, never()).save(any());
     }
 
     @Test
-    void getItems_returnsPagedResult() {
-        Pageable pageable = PageRequest.of(0, 10);
-        Item item = new Item();
-        item.setId(ID);
-        item.setName(NAME);
-        Page<Item> page = new PageImpl<>(java.util.List.of(item));
+    void getItems_noFilters_returnsAllPaged() {
+        var pageable = PageRequest.of(0, 10);
+        var item = item(ID, NAME, PRICE);
+        var page = new PageImpl<>(List.of(item), pageable, 1);
 
         when(itemRepository.findAll(pageable)).thenReturn(page);
         when(itemMapper.toDto(item)).thenReturn(new ItemDto(ID, NAME, PRICE));
 
-        Page<ItemDto> result = itemService.getItems(0, 10);
+        var result = itemService.getItems(0, 10, null);
 
         assertEquals(1, result.getTotalElements());
         assertEquals(NAME, result.getContent().get(0).getName());
+        verify(itemRepository).findAll(pageable);
+    }
+
+    @Test
+    void getItems_withNameFilter_usesContainingIgnoreCase() {
+        var pageable = PageRequest.of(0, 10);
+        var item = item(ID, NAME, PRICE);
+        var page = new PageImpl<>(List.of(item), pageable, 1);
+
+        when(itemRepository.findByNameContainingIgnoreCase(SEARCH_QUERY, pageable)).thenReturn(page);
+        when(itemMapper.toDto(item)).thenReturn(new ItemDto(ID, NAME, PRICE));
+
+        var result = itemService.getItems(0, 10, SEARCH_QUERY);
+
+        assertEquals(1, result.getTotalElements());
+        verify(itemRepository).findByNameContainingIgnoreCase(SEARCH_QUERY, pageable);
     }
 
     @Test
     void getItemById_success() {
-        Item item = new Item();
-        item.setId(ID);
-        item.setName(NAME);
+        var item = item(ID, NAME, PRICE);
 
         when(itemRepository.findById(ID)).thenReturn(Optional.of(item));
         when(itemMapper.toDto(item)).thenReturn(new ItemDto(ID, NAME, PRICE));
 
-        ItemDto result = itemService.getItemById(ID);
+        var result = itemService.getItemById(ID);
 
         assertEquals(NAME, result.getName());
     }
 
     @Test
     void getItemById_notFound_throwsException() {
+
         when(itemRepository.findById(ID)).thenReturn(Optional.empty());
 
-        NotFoundException ex = assertThrows(NotFoundException.class,
-                () -> itemService.getItemById(ID));
-
+        var ex = assertThrows(NotFoundException.class, () -> itemService.getItemById(ID));
         assertTrue(ex.getMessage().contains(ID.toString()));
     }
 
     @Test
-    void getItemByName_success() {
-        Item item = new Item();
-        item.setId(ID);
-
-        when(itemRepository.findByName(NAME)).thenReturn(Optional.of(item));
-        when(itemMapper.toDto(item)).thenReturn(new ItemDto(ID, NAME, PRICE));
-
-        ItemDto result = itemService.getItemByName(NAME);
-        assertEquals(NAME, result.getName());
-    }
-
-    @Test
-    void getItemByName_notFound_throwsException() {
-        when(itemRepository.findByName(NAME)).thenReturn(Optional.empty());
-
-        NotFoundException ex = assertThrows(NotFoundException.class,
-                () -> itemService.getItemByName(NAME));
-
-        assertTrue(ex.getMessage().contains(NAME));
-    }
-
-    @Test
     void updateItem_nameNotChanged_success() {
-        Item existing = new Item();
-        existing.setId(ID);
-        existing.setName(NAME);
-        existing.setPrice(PRICE);
-
-        ItemUpdateDto dto = new ItemUpdateDto();
-        dto.setName(NAME); // то же имя
+        var existing = item(ID, NAME, PRICE);
+        var dto = new ItemUpdateDto();
+        dto.setName(NAME);
         dto.setPrice(BigDecimal.valueOf(1499.99));
 
         when(itemRepository.findById(ID)).thenReturn(Optional.of(existing));
         when(itemRepository.save(existing)).thenReturn(existing);
         when(itemMapper.toDto(existing)).thenReturn(new ItemDto(ID, NAME, dto.getPrice()));
-
         doNothing().when(itemMapper).updateEntityFromDto(dto, existing);
 
-        ItemDto result = itemService.updateItem(ID, dto);
+        var result = itemService.updateItem(ID, dto);
 
         assertEquals(dto.getPrice(), result.getPrice());
         verify(itemMapper).updateEntityFromDto(dto, existing);
         verify(itemRepository).save(existing);
-        // findByName НЕ должен вызываться, т.к. имя не менялось
         verify(itemRepository, never()).findByName(any());
     }
 
     @Test
-    void updateItem_nameChanged_toUniqueName_success() {
-        Item existing = new Item();
-        existing.setId(ID);
-        existing.setName(NAME);
-
-        ItemUpdateDto dto = new ItemUpdateDto();
+    void updateItem_nameChanged_toUnique_success() {
+        var existing = item(ID, NAME, PRICE);
+        var dto = new ItemUpdateDto();
         dto.setName(NEW_NAME);
 
         when(itemRepository.findById(ID)).thenReturn(Optional.of(existing));
-        when(itemRepository.findByName(NEW_NAME)).thenReturn(Optional.empty());
+        when(itemRepository.findByName(NEW_NAME)).thenReturn(Optional.empty()); // свободно
         when(itemRepository.save(existing)).thenReturn(existing);
 
         doNothing().when(itemMapper).updateEntityFromDto(dto, existing);
 
         itemService.updateItem(ID, dto);
 
-        verify(itemRepository).findByName(NEW_NAME); // проверка уникальности
+        verify(itemRepository).findByName(NEW_NAME);
         verify(itemRepository).save(existing);
     }
 
     @Test
-    void updateItem_nameChanged_toExistingName_throwsException() {
-        Item existing = new Item();
-        existing.setId(ID);
-        existing.setName(NAME);
+    void updateItem_nameChanged_toExisting_throwsException() {
+        var existing = item(ID, NAME, PRICE);
+        var anotherItem = item(2L, NEW_NAME, PRICE);
 
-        Item anotherItem = new Item();
-        anotherItem.setId(2L);
-        anotherItem.setName(NEW_NAME);
-
-        ItemUpdateDto dto = new ItemUpdateDto();
+        var dto = new ItemUpdateDto();
         dto.setName(NEW_NAME);
 
         when(itemRepository.findById(ID)).thenReturn(Optional.of(existing));
         when(itemRepository.findByName(NEW_NAME)).thenReturn(Optional.of(anotherItem));
 
-        AlreadyExistsException ex = assertThrows(AlreadyExistsException.class,
-                () -> itemService.updateItem(ID, dto));
+        var ex = assertThrows(AlreadyExistsException.class, () -> itemService.updateItem(ID, dto));
 
         assertTrue(ex.getMessage().contains(NEW_NAME));
         verify(itemRepository, never()).save(any());
     }
 
     @Test
-    void updateItem_onlyPriceChanged_success() {
-        Item existing = new Item();
-        existing.setId(ID);
-        existing.setName(NAME);
-
-        ItemUpdateDto dto = new ItemUpdateDto();
+    void updateItem_onlyPriceChanged_noNameCheck() {
+        var existing = item(ID, NAME, PRICE);
+        var dto = new ItemUpdateDto();
         dto.setPrice(BigDecimal.valueOf(2000));
 
         when(itemRepository.findById(ID)).thenReturn(Optional.of(existing));
-        doNothing().when(itemMapper).updateEntityFromDto(dto, existing);
         when(itemRepository.save(existing)).thenReturn(existing);
+        doNothing().when(itemMapper).updateEntityFromDto(dto, existing);
 
         itemService.updateItem(ID, dto);
 
-        verify(itemRepository, never()).findByName(any()); // имя не менялось
+        verify(itemRepository, never()).findByName(any());
         verify(itemRepository).save(existing);
     }
 
@@ -233,16 +202,13 @@ class ItemServiceImplTest {
     void updateItem_notFound_throwsException() {
         when(itemRepository.findById(ID)).thenReturn(Optional.empty());
 
-        NotFoundException ex = assertThrows(NotFoundException.class,
-                () -> itemService.updateItem(ID, new ItemUpdateDto()));
-
+        var ex = assertThrows(NotFoundException.class, () -> itemService.updateItem(ID, new ItemUpdateDto()));
         assertTrue(ex.getMessage().contains(ID.toString()));
     }
 
     @Test
     void deleteItem_success() {
-        Item item = new Item();
-        item.setId(ID);
+        var item = item(ID, NAME, PRICE);
 
         when(itemRepository.findById(ID)).thenReturn(Optional.of(item));
 
@@ -255,10 +221,16 @@ class ItemServiceImplTest {
     void deleteItem_notFound_throwsException() {
         when(itemRepository.findById(ID)).thenReturn(Optional.empty());
 
-        NotFoundException ex = assertThrows(NotFoundException.class,
-                () -> itemService.deleteItem(ID));
-
+        var ex = assertThrows(NotFoundException.class, () -> itemService.deleteItem(ID));
         assertTrue(ex.getMessage().contains(ID.toString()));
         verify(itemRepository, never()).delete(any());
+    }
+
+    private Item item(Long id, String name, BigDecimal price) {
+        var item = new Item();
+        item.setId(id);
+        item.setName(name);
+        item.setPrice(price);
+        return item;
     }
 }

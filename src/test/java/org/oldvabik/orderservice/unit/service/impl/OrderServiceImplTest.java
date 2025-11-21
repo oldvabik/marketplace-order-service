@@ -14,6 +14,9 @@ import org.oldvabik.orderservice.repository.ItemRepository;
 import org.oldvabik.orderservice.repository.OrderRepository;
 import org.oldvabik.orderservice.security.AccessChecker;
 import org.oldvabik.orderservice.service.impl.OrderServiceImpl;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import java.math.BigDecimal;
@@ -52,38 +55,36 @@ class OrderServiceImplTest {
 
     @Test
     void createOrder_success() {
-        OrderCreateDto createDto = new OrderCreateDto();
+        var createDto = new OrderCreateDto();
         createDto.setEmail(EMAIL);
         createDto.setItems(List.of(itemCreateDto(ITEM_NAME, 2)));
 
-        UserDto user = userDto(USER_ID, EMAIL);
-        Item item = item(10L, ITEM_NAME, BigDecimal.valueOf(999.99));
-        Order orderEntity = order(ORDER_ID, USER_ID);
-
-        // ВАЖНО: маппер должен установить userId!
-        OrderDto mappedDto = new OrderDto();
-        mappedDto.setUserId(USER_ID); // <-- Это критично!
+        var user = userDto(USER_ID, EMAIL);
+        var item = item(10L, ITEM_NAME, BigDecimal.valueOf(999.99));
+        var savedOrder = order(ORDER_ID, USER_ID);
+        var orderDtoFromMapper = new OrderDto(); // маппер возвращает DTO без user
 
         when(userServiceClient.getUserByEmail(authentication, EMAIL)).thenReturn(user);
         when(accessChecker.canAccessUser(authentication, user)).thenReturn(true);
         when(itemRepository.findByName(ITEM_NAME)).thenReturn(Optional.of(item));
-        when(orderRepository.save(any(Order.class))).thenReturn(orderEntity);
-        when(orderMapper.toDto(orderEntity)).thenReturn(mappedDto);
+        when(orderRepository.save(any(Order.class))).thenReturn(savedOrder);
+        when(orderMapper.toDto(savedOrder)).thenReturn(orderDtoFromMapper);
 
         OrderDto result = orderService.createOrder(authentication, createDto);
 
         assertNotNull(result);
         assertEquals(user, result.getUser());
         verify(orderRepository).save(any(Order.class));
+        verify(orderMapper).toDto(savedOrder);
     }
 
     @Test
     void createOrder_accessDenied_throwsException() {
-        OrderCreateDto dto = new OrderCreateDto();
+        var dto = new OrderCreateDto();
         dto.setEmail(EMAIL);
         dto.setItems(List.of(itemCreateDto(ITEM_NAME, 1)));
 
-        UserDto user = userDto(USER_ID, EMAIL);
+        var user = userDto(USER_ID, EMAIL);
 
         when(userServiceClient.getUserByEmail(authentication, EMAIL)).thenReturn(user);
         when(accessChecker.canAccessUser(authentication, user)).thenReturn(false);
@@ -94,15 +95,15 @@ class OrderServiceImplTest {
 
     @Test
     void createOrder_itemNotFound_throwsException() {
-        OrderCreateDto dto = new OrderCreateDto();
+        var dto = new OrderCreateDto();
         dto.setEmail(EMAIL);
-        dto.setItems(List.of(itemCreateDto("Unknown", 1)));
+        dto.setItems(List.of(itemCreateDto("Unknown Item", 1)));
 
-        UserDto user = userDto(USER_ID, EMAIL);
+        var user = userDto(USER_ID, EMAIL);
 
         when(userServiceClient.getUserByEmail(authentication, EMAIL)).thenReturn(user);
         when(accessChecker.canAccessUser(authentication, user)).thenReturn(true);
-        when(itemRepository.findByName("Unknown")).thenReturn(Optional.empty());
+        when(itemRepository.findByName("Unknown Item")).thenReturn(Optional.empty());
 
         assertThrows(NotFoundException.class, () -> orderService.createOrder(authentication, dto));
         verify(orderRepository, never()).save(any());
@@ -110,14 +111,12 @@ class OrderServiceImplTest {
 
     @Test
     void getOrderById_success() {
-        Order orderEntity = order(ORDER_ID, USER_ID);
-        UserDto user = userDto(USER_ID, EMAIL);
+        var order = order(ORDER_ID, USER_ID);
+        var user = userDto(USER_ID, EMAIL);
+        var orderDtoFromMapper = new OrderDto();
 
-        OrderDto dtoFromMapper = new OrderDto();
-        dtoFromMapper.setUserId(USER_ID); // <-- обязательно!
-
-        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(orderEntity));
-        when(orderMapper.toDto(orderEntity)).thenReturn(dtoFromMapper);
+        when(orderRepository.findByIdWithDetails(ORDER_ID)).thenReturn(Optional.of(order));
+        when(orderMapper.toDto(order)).thenReturn(orderDtoFromMapper);
         when(userServiceClient.getUserById(authentication, USER_ID)).thenReturn(user);
         when(accessChecker.canAccessUser(authentication, user)).thenReturn(true);
 
@@ -128,19 +127,19 @@ class OrderServiceImplTest {
 
     @Test
     void getOrderById_notFound_throwsException() {
-        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdWithDetails(ORDER_ID)).thenReturn(Optional.empty());
+
         assertThrows(NotFoundException.class, () -> orderService.getOrderById(authentication, ORDER_ID));
     }
 
     @Test
     void getOrderById_accessDenied_throwsException() {
-        Order orderEntity = order(ORDER_ID, USER_ID);
-        UserDto user = userDto(USER_ID, EMAIL);
-        OrderDto dto = new OrderDto();
-        dto.setUserId(USER_ID);
+        var order = order(ORDER_ID, USER_ID);
+        var user = userDto(USER_ID, EMAIL);
+        var orderDto = new OrderDto();
 
-        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(orderEntity));
-        when(orderMapper.toDto(orderEntity)).thenReturn(dto);
+        when(orderRepository.findByIdWithDetails(ORDER_ID)).thenReturn(Optional.of(order));
+        when(orderMapper.toDto(order)).thenReturn(orderDto);
         when(userServiceClient.getUserById(authentication, USER_ID)).thenReturn(user);
         when(accessChecker.canAccessUser(authentication, user)).thenReturn(false);
 
@@ -148,112 +147,117 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void getOrdersByIds_returnsList() {
-        Order orderEntity = order(ORDER_ID, USER_ID);
-        UserDto user = userDto(USER_ID, EMAIL);
+    void getOrders_noFilters_returnsPagedOrders() {
+        var order = order(ORDER_ID, USER_ID);
+        var user = userDto(USER_ID, EMAIL);
+        var orderDto = new OrderDto();
+        var pageRequest = PageRequest.of(0, 10);
+        var page = new PageImpl<>(List.of(order), pageRequest, 1);
 
-        OrderDto dto = new OrderDto();
-        dto.setUserId(USER_ID); // <-- критично!
-
-        when(orderRepository.findByIdIn(List.of(ORDER_ID))).thenReturn(List.of(orderEntity));
-        when(orderMapper.toDto(orderEntity)).thenReturn(dto);
+        when(orderRepository.findAllWithDetails(pageRequest)).thenReturn(page);
+        when(orderMapper.toDto(order)).thenReturn(orderDto);
         when(userServiceClient.getUserById(authentication, USER_ID)).thenReturn(user);
 
-        List<OrderDto> result = orderService.getOrdersByIds(authentication, List.of(ORDER_ID));
+        Page<OrderDto> result = orderService.getOrders(authentication, 0, 10, null, null);
 
-        assertEquals(1, result.size());
-        assertEquals(user, result.get(0).getUser());
+        assertEquals(1, result.getContent().size());
+        assertEquals(user, result.getContent().get(0).getUser());
     }
 
     @Test
-    void getOrdersByStatuses_returnsList() {
-        Order orderEntity = order(ORDER_ID, USER_ID);
-        UserDto user = userDto(USER_ID, EMAIL);
+    void getOrders_withIdsAndStatuses_usesCorrectRepositoryMethod() {
+        var order = order(ORDER_ID, USER_ID);
+        var user = userDto(USER_ID, EMAIL);
+        var orderDto = new OrderDto();
+        var pageRequest = PageRequest.of(0, 10);
+        var page = new PageImpl<>(List.of(order), pageRequest, 1);
 
-        OrderDto dto = new OrderDto();
-        dto.setUserId(USER_ID); // <-- обязательно!
-
-        when(orderRepository.findByStatusIn(anyList())).thenReturn(List.of(orderEntity));
-        when(orderMapper.toDto(orderEntity)).thenReturn(dto);
+        when(orderRepository.findByIdInAndStatusIn(
+                eq(List.of(ORDER_ID)), eq(List.of(OrderStatus.PENDING)), eq(pageRequest)
+        )).thenReturn(page);
+        when(orderMapper.toDto(order)).thenReturn(orderDto);
         when(userServiceClient.getUserById(authentication, USER_ID)).thenReturn(user);
 
-        List<OrderDto> result = orderService.getOrdersByStatuses(authentication, List.of(OrderStatus.PENDING));
+        Page<OrderDto> result = orderService.getOrders(authentication, 0, 10, List.of(ORDER_ID), List.of(OrderStatus.PENDING));
 
-        assertEquals(1, result.size());
-        assertEquals(user, result.get(0).getUser());
+        assertEquals(1, result.getContent().size());
+        verify(orderRepository).findByIdInAndStatusIn(any(), any(), any());
     }
 
     @Test
     void updateOrder_success() {
-        Order orderEntity = order(ORDER_ID, USER_ID);
-        OrderUpdateDto updateDto = new OrderUpdateDto();
+        var order = order(ORDER_ID, USER_ID);
+        var updateDto = new OrderUpdateDto();
         updateDto.setStatus(OrderStatus.SHIPPED);
-        UserDto user = userDto(USER_ID, EMAIL);
 
-        OrderDto updatedDto = new OrderDto();
-        updatedDto.setUserId(USER_ID); // <-- обязательно!
+        var user = userDto(USER_ID, EMAIL);
 
-        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(orderEntity));
-        doNothing().when(orderMapper).updateEntityFromDto(updateDto, orderEntity);
-        when(orderRepository.save(orderEntity)).thenReturn(orderEntity);
-        when(orderMapper.toDto(orderEntity)).thenReturn(updatedDto);
+        var updatedDto = new OrderDto();
+        updatedDto.setUserId(USER_ID);
+
+        when(orderRepository.findByIdWithDetails(ORDER_ID)).thenReturn(Optional.of(order));
+        doNothing().when(orderMapper).updateEntityFromDto(updateDto, order);
+        when(orderRepository.save(order)).thenReturn(order);
+        when(orderMapper.toDto(order)).thenReturn(updatedDto);
         when(userServiceClient.getUserById(authentication, USER_ID)).thenReturn(user);
 
         OrderDto result = orderService.updateOrder(authentication, ORDER_ID, updateDto);
 
         assertEquals(user, result.getUser());
-        verify(orderMapper).updateEntityFromDto(updateDto, orderEntity);
+        verify(orderMapper).updateEntityFromDto(updateDto, order);
+        verify(orderRepository).save(order);
     }
 
     @Test
     void deleteOrder_success() {
-        Order orderEntity = order(ORDER_ID, USER_ID);
-        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(orderEntity));
+        var order = order(ORDER_ID, USER_ID);
+
+        when(orderRepository.findByIdWithDetails(ORDER_ID)).thenReturn(Optional.of(order));
 
         orderService.deleteOrder(ORDER_ID);
 
-        verify(orderRepository).delete(orderEntity);
+        verify(orderRepository).delete(order);
     }
 
     @Test
     void deleteOrder_notFound_throwsException() {
-        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdWithDetails(ORDER_ID)).thenReturn(Optional.empty());
+
         assertThrows(NotFoundException.class, () -> orderService.deleteOrder(ORDER_ID));
     }
 
-    // Вспомогательные методы
-    private OrderItemCreateDto itemCreateDto(String name, int qty) {
-        OrderItemCreateDto dto = new OrderItemCreateDto();
+    private OrderItemCreateDto itemCreateDto(String name, int quantity) {
+        var dto = new OrderItemCreateDto();
         dto.setName(name);
-        dto.setQuantity(qty);
+        dto.setQuantity(quantity);
         return dto;
     }
 
     private Item item(Long id, String name, BigDecimal price) {
-        Item i = new Item();
-        i.setId(id);
-        i.setName(name);
-        i.setPrice(price);
-        return i;
+        var item = new Item();
+        item.setId(id);
+        item.setName(name);
+        item.setPrice(price);
+        return item;
     }
 
     private Order order(Long id, Long userId) {
-        Order o = new Order();
-        o.setId(id);
-        o.setUserId(userId);
-        o.setStatus(OrderStatus.PENDING);
-        o.setCreationDate(LocalDateTime.now());
-        o.setItems(new ArrayList<>());
-        return o;
+        var order = new Order();
+        order.setId(id);
+        order.setUserId(userId);
+        order.setStatus(OrderStatus.PENDING);
+        order.setCreationDate(LocalDateTime.now());
+        order.setItems(new ArrayList<>());
+        return order;
     }
 
     private UserDto userDto(Long id, String email) {
-        UserDto u = new UserDto();
-        u.setId(id);
-        u.setEmail(email);
-        u.setName("Test");
-        u.setSurname("User");
-        u.setBirthDate(LocalDate.of(1990, 1, 1));
-        return u;
+        var user = new UserDto();
+        user.setId(id);
+        user.setEmail(email);
+        user.setName("Test");
+        user.setSurname("User");
+        user.setBirthDate(LocalDate.of(1990, 1, 1));
+        return user;
     }
 }

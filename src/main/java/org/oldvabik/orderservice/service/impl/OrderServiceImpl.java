@@ -13,6 +13,9 @@ import org.oldvabik.orderservice.repository.ItemRepository;
 import org.oldvabik.orderservice.repository.OrderRepository;
 import org.oldvabik.orderservice.security.AccessChecker;
 import org.oldvabik.orderservice.service.OrderService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -20,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -89,11 +91,44 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    public Page<OrderDto> getOrders(Authentication auth,
+                                    Integer page,
+                                    Integer size,
+                                    List<Long> ids,
+                                    List<OrderStatus> statuses) {
+        log.debug("[OrderService] getOrders: page={}, size={}", page, size);
+
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Order> orders;
+
+        boolean hasIds = ids != null && !ids.isEmpty();
+        boolean hasStatuses = statuses != null && !statuses.isEmpty();
+
+        if (!hasIds && !hasStatuses) {
+            orders = orderRepository.findAllWithDetails(pageable);
+        } else if (hasIds && hasStatuses) {
+            orders = orderRepository.findByIdInAndStatusIn(ids, statuses, pageable);
+        } else if (hasIds) {
+            orders = orderRepository.findByIdIn(ids, pageable);
+        } else {
+            orders = orderRepository.findByStatusIn(statuses, pageable);
+        }
+
+        Page<OrderDto> result = orders.map(order -> {
+            OrderDto dto = orderMapper.toDto(order);
+            dto.setUser(userServiceClient.getUserById(auth, order.getUserId()));
+            return dto;
+        });
+
+        log.info("[OrderService] getOrders: returning {} orders", result.getContent().size());
+        return result;
+    }
+
+    @Override
     public OrderDto getOrderById(Authentication auth, Long id) {
         log.debug("[OrderService] getOrderById: id={}", id);
 
-        Order order = orderRepository.findById(id)
+        Order order = orderRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> {
                     log.warn("[OrderService] getOrderById: id={} not found", id);
                     return new NotFoundException("order with id " + id + " not found");
@@ -112,37 +147,11 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public List<OrderDto> getOrdersByIds(Authentication auth, List<Long> ids) {
-        log.debug("[OrderService] getOrdersByIds: ids={}", ids);
-
-        List<Order> orders = orderRepository.findByIdIn(ids);
-        return orders.stream().map(order -> {
-            OrderDto dto = orderMapper.toDto(order);
-            dto.setUser(userServiceClient.getUserById(auth, order.getUserId()));
-            return dto;
-        }).collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<OrderDto> getOrdersByStatuses(Authentication auth,List<OrderStatus> statuses) {
-        log.debug("[OrderService] getOrdersByStatuses: statuses={}", statuses);
-
-        List<Order> orders = orderRepository.findByStatusIn(statuses);
-        return orders.stream().map(order -> {
-            OrderDto dto = orderMapper.toDto(order);
-            dto.setUser(userServiceClient.getUserById(auth, order.getUserId()));
-            return dto;
-        }).collect(Collectors.toList());
-    }
-
-    @Override
     @Transactional
     public OrderDto updateOrder(Authentication auth, Long id, OrderUpdateDto dto) {
         log.debug("[OrderService] updateOrder: id={}", id);
 
-        Order order = orderRepository.findById(id)
+        Order order = orderRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> {
                     log.warn("[OrderService] updateOrder: id={} not found", id);
                     return new NotFoundException("order with id " + id + " not found");
@@ -162,7 +171,7 @@ public class OrderServiceImpl implements OrderService {
     public void deleteOrder(Long id) {
         log.debug("[OrderService] deleteOrder: id={}", id);
 
-        Order order = orderRepository.findById(id)
+        Order order = orderRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> {
                     log.warn("[OrderService] deleteOrder: id={} not found", id);
                     return new NotFoundException("order with id " + id + " not found");

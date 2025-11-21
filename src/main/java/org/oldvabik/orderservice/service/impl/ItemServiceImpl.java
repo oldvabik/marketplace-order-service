@@ -46,11 +46,17 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
-    public Page<ItemDto> getItems(Integer page, Integer size) {
+    public Page<ItemDto> getItems(Integer page, Integer size, String name) {
         log.debug("[ItemService] getItems: page={}, size={}", page, size);
 
         Pageable pageable = PageRequest.of(page, size);
-        Page<Item> items = itemRepository.findAll(pageable);
+        Page<Item> items;
+
+        if (name != null && !name.isBlank()) {
+            items = itemRepository.findByNameContainingIgnoreCase(name, pageable);
+        } else {
+            items = itemRepository.findAll(pageable);
+        }
 
         log.info("[ItemService] getItems: fetched {} items", items.getContent().size());
         return items.map(itemMapper::toDto);
@@ -67,20 +73,6 @@ public class ItemServiceImpl implements ItemService {
                 });
 
         log.info("[ItemService] getItemById: found id={}", id);
-        return itemMapper.toDto(item);
-    }
-
-    @Override
-    public ItemDto getItemByName(String name){
-        log.debug("[ItemService] getItemByName: name={}", name);
-
-        Item item = itemRepository.findByName(name)
-                .orElseThrow(() -> {
-                    log.warn("[ItemService] getItemByName: name={} not found", name);
-                    return new NotFoundException("item with name " + name + " not found");
-                });
-
-        log.info("[ItemService] getItemByName: found name={}", name);
         return itemMapper.toDto(item);
     }
 
