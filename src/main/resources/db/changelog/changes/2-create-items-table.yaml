@@ -1,0 +1,36 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2-create-items-table
+      author: oldvabik
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: items
+      changes:
+        - createTable:
+            tableName: items
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    unique: true
+                    nullable: false
+              - column:
+                  name: price
+                  type: numeric(10,2)
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: items
+            indexName: idx_items_name
+            columns:
+              - column:
+                  name: name

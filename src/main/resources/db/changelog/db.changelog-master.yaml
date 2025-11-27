@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/changes/1-create-orders-table.yaml
+  - include:
+      file: db/changelog/changes/2-create-items-table.yaml
+  - include:
+      file: db/changelog/changes/3-create-order-items-table.yaml

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orderservice-app
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - POSTGRES_URL_DOCKER=${POSTGRES_URL_DOCKER}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
+    depends_on:
+      - postgres
+    networks:
+      - auth-network
+
+  postgres:
+    image: postgres:17
+    container_name: orderservice-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5434:5434"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - auth-network
+
+volumes:
+  auth_db_data:
+
+networks:
+  auth-network:
+    driver: bridge

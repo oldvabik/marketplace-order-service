@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: OrderService
+
+  profiles:
+    active: local
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    enabled: true
+
+jwt:
+  secret: ${JWT_SECRET}
+
+user:
+  service:
+    url: ${USER_SERVICE_URL}
+    endpoints:
+      get-user-by-id: /api/v1/users/{id}
+      get-user-by-email: /api/v1/users/search
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      user-service:
+        failure-rate-threshold: 30
+        slow-call-rate-threshold: 90
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 5
+        minimum-number-of-calls: 30
+  timelimiter:
+    instances:
+      user-service:
+        timeout-duration: 3s
+
+server:
+  port: 8082
