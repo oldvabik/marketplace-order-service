@@ -3,3 +3,7 @@ spring:
     url: ${POSTGRES_URL_ORDER_SERVICE}
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
+
+user:
+  service:
+    url: http://localhost:8081

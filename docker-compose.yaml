@@ -14,7 +14,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
-      - USER_SERVICE_URL=${USER_SERVICE_URL}
     depends_on:
       - postgres
     networks:

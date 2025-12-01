@@ -23,7 +23,6 @@ jwt:
 
 user:
   service:
-    url: ${USER_SERVICE_URL}
     endpoints:
       get-user-by-id: /api/v1/users/{id}
       get-user-by-email: /api/v1/users/search
