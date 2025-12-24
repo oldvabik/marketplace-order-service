@@ -9,6 +9,7 @@ import org.oldvabik.orderservice.client.UserServiceClient;
 import org.oldvabik.orderservice.dto.*;
 import org.oldvabik.orderservice.entity.*;
 import org.oldvabik.orderservice.exception.NotFoundException;
+import org.oldvabik.orderservice.kafka.OrderEventProducer;
 import org.oldvabik.orderservice.mapper.OrderMapper;
 import org.oldvabik.orderservice.repository.ItemRepository;
 import org.oldvabik.orderservice.repository.OrderRepository;
@@ -34,14 +35,22 @@ class OrderServiceImplTest {
 
     @Mock
     private OrderRepository orderRepository;
+
     @Mock
     private ItemRepository itemRepository;
+
     @Mock
     private OrderMapper orderMapper;
+
     @Mock
     private UserServiceClient userServiceClient;
+
     @Mock
     private AccessChecker accessChecker;
+
+    @Mock
+    private OrderEventProducer orderEventProducer;
+
     @Mock
     private Authentication authentication;
 
@@ -62,7 +71,7 @@ class OrderServiceImplTest {
         var user = userDto(USER_ID, EMAIL);
         var item = item(10L, ITEM_NAME, BigDecimal.valueOf(999.99));
         var savedOrder = order(ORDER_ID, USER_ID);
-        var orderDtoFromMapper = new OrderDto(); // маппер возвращает DTO без user
+        var orderDtoFromMapper = new OrderDto();
 
         when(userServiceClient.getUserByEmail(authentication, EMAIL)).thenReturn(user);
         when(accessChecker.canAccessUser(authentication, user)).thenReturn(true);
@@ -70,12 +79,15 @@ class OrderServiceImplTest {
         when(orderRepository.save(any(Order.class))).thenReturn(savedOrder);
         when(orderMapper.toDto(savedOrder)).thenReturn(orderDtoFromMapper);
 
+        doNothing().when(orderEventProducer).sendOrderCreatedEvent(any());
+
         OrderDto result = orderService.createOrder(authentication, createDto);
 
         assertNotNull(result);
         assertEquals(user, result.getUser());
         verify(orderRepository).save(any(Order.class));
         verify(orderMapper).toDto(savedOrder);
+        verify(orderEventProducer).sendOrderCreatedEvent(any());
     }
 
     @Test

@@ -1,3 +1,6 @@
+server:
+  port: 8082
+
 spring:
   application:
     name: OrderService
@@ -17,6 +20,9 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     enabled: true
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
 
 jwt:
   secret: ${JWT_SECRET}
@@ -41,5 +47,8 @@ resilience4j:
       user-service:
         timeout-duration: 3s
 
-server:
-  port: 8082
+app:
+  kafka:
+    create-order-topic: order-created-topic
+    create-payment-topic: payment-created-topic
+    order-group-id: order-service-group

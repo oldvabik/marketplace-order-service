@@ -18,4 +18,6 @@ public interface OrderService {
     OrderDto updateOrder(Authentication auth, Long id, OrderUpdateDto dto);
 
     void deleteOrder(Long id);
+
+    void updateOrderStatusByPayment(String orderId, String paymentStatus);
 }

@@ -1,8 +1,15 @@
 spring:
+  config:
+    activate:
+      on-profile: docker
+
   datasource:
-    url: ${POSTGRES_URL_DOCKER}
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
 
 user:
   service:

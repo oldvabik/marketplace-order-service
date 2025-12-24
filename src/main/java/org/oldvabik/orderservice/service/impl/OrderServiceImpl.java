@@ -8,6 +8,8 @@ import org.oldvabik.orderservice.entity.Order;
 import org.oldvabik.orderservice.entity.OrderItem;
 import org.oldvabik.orderservice.entity.OrderStatus;
 import org.oldvabik.orderservice.exception.NotFoundException;
+import org.oldvabik.orderservice.event.CreateOrderEvent;
+import org.oldvabik.orderservice.kafka.OrderEventProducer;
 import org.oldvabik.orderservice.mapper.OrderMapper;
 import org.oldvabik.orderservice.repository.ItemRepository;
 import org.oldvabik.orderservice.repository.OrderRepository;
@@ -20,6 +22,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,17 +35,20 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final UserServiceClient userServiceClient;
     private final AccessChecker accessChecker;
+    private final OrderEventProducer orderEventProducer;
 
     public OrderServiceImpl(OrderRepository orderRepository,
                             ItemRepository itemRepository,
                             OrderMapper orderMapper,
                             UserServiceClient userServiceClient,
-                            AccessChecker accessChecker) {
+                            AccessChecker accessChecker,
+                            OrderEventProducer orderEventProducer) {
         this.orderRepository = orderRepository;
         this.itemRepository = itemRepository;
         this.orderMapper = orderMapper;
         this.userServiceClient = userServiceClient;
         this.accessChecker = accessChecker;
+        this.orderEventProducer = orderEventProducer;
     }
 
     @Override
@@ -82,6 +88,19 @@ public class OrderServiceImpl implements OrderService {
         order.setItems(orderItems);
 
         Order saved = orderRepository.save(order);
+
+        BigDecimal totalAmount = orderItems.stream()
+                .map(oi -> oi.getItem().getPrice().multiply(BigDecimal.valueOf(oi.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        CreateOrderEvent event = CreateOrderEvent.builder()
+                .orderId(String.valueOf(saved.getId()))
+                .userId(String.valueOf(user.getId()))
+                .totalAmount(totalAmount)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        orderEventProducer.sendOrderCreatedEvent(event);
 
         OrderDto response = orderMapper.toDto(saved);
         response.setUser(user);
@@ -180,5 +199,33 @@ public class OrderServiceImpl implements OrderService {
         orderRepository.delete(order);
 
         log.info("[OrderService] deleteOrder: deleted id={}", id);
+    }
+
+    @Override
+    @Transactional
+    public void updateOrderStatusByPayment(String orderId, String paymentStatus) {
+        log.debug("[OrderService] updateOrderStatusByPayment: orderId={}, paymentStatus={}", orderId, paymentStatus);
+
+        try {
+            Long id = Long.parseLong(orderId);
+            Order order = orderRepository.findById(id)
+                    .orElseThrow(() -> {
+                        log.warn("[OrderService] updateOrderStatusByPayment: orderId={} not found", orderId);
+                        return new NotFoundException("order with id " + id + " not found");
+                    });
+
+            if ("SUCCESS".equalsIgnoreCase(paymentStatus)) {
+                order.setStatus(OrderStatus.PAID);
+                log.info("[OrderService] Payment SUCCESS - setting order status to PAID");
+            } else if ("FAILED".equalsIgnoreCase(paymentStatus)) {
+                order.setStatus(OrderStatus.PAYMENT_FAILED);
+                log.info("[OrderService] Payment FAILED - setting order status to PAYMENT_FAILED");
+            }
+
+            orderRepository.save(order);
+            log.info("[OrderService] updateOrderStatusByPayment: updated orderId={}, new status={}", orderId, order.getStatus());
+        } catch (NumberFormatException e) {
+            log.error("[OrderService] updateOrderStatusByPayment: invalid orderId format: {}", orderId, e);
+        }
     }
 }
