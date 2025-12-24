@@ -7,6 +7,7 @@ import org.oldvabik.orderservice.entity.Item;
 import org.oldvabik.orderservice.entity.Order;
 import org.oldvabik.orderservice.entity.OrderStatus;
 import org.oldvabik.orderservice.exception.NotFoundException;
+import org.oldvabik.orderservice.kafka.OrderEventProducer;
 import org.oldvabik.orderservice.repository.ItemRepository;
 import org.oldvabik.orderservice.repository.OrderRepository;
 import org.oldvabik.orderservice.security.AccessChecker;
@@ -33,7 +34,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.kafka.bootstrap-servers=localhost:9092"
+})
 @ActiveProfiles("test")
 class OrderServiceImplTest {
 
@@ -52,15 +55,21 @@ class OrderServiceImplTest {
 
     @Autowired
     private OrderService orderService;
+
     @Autowired
     private OrderRepository orderRepository;
+
     @Autowired
     private ItemRepository itemRepository;
 
     @MockBean
     private UserServiceClient userServiceClient;
+
     @MockBean
     private AccessChecker accessChecker;
+
+    @MockBean
+    private OrderEventProducer orderEventProducer;
 
     private Authentication auth;
     private UserDto testUser;
@@ -87,6 +96,8 @@ class OrderServiceImplTest {
         testItem = itemRepository.save(testItem);
 
         when(accessChecker.canAccessUser(any(), any())).thenReturn(true);
+
+        doNothing().when(orderEventProducer).sendOrderCreatedEvent(any());
     }
 
     @Test
@@ -111,6 +122,8 @@ class OrderServiceImplTest {
         assertEquals("Test Item", result.getItems().get(0).getName());
         assertEquals(3, result.getItems().get(0).getQuantity());
         assertEquals(BigDecimal.valueOf(99.99), result.getItems().get(0).getPrice());
+
+        verify(orderEventProducer).sendOrderCreatedEvent(any());
     }
 
     @Test
@@ -131,6 +144,7 @@ class OrderServiceImplTest {
 
         assertThrows(AccessDeniedException.class, () -> orderService.createOrder(auth, dto));
         assertEquals(0, orderRepository.count());
+        verify(orderEventProducer, never()).sendOrderCreatedEvent(any());
     }
 
     @Test
@@ -146,14 +160,15 @@ class OrderServiceImplTest {
 
         assertThrows(NotFoundException.class, () -> orderService.createOrder(auth, dto));
         assertEquals(0, orderRepository.count());
+        verify(orderEventProducer, never()).sendOrderCreatedEvent(any());
     }
 
     @Test
     void getOrderById_success() {
-        when(userServiceClient.getUserByEmail(auth, "test@example.com")).thenReturn(testUser);
         when(userServiceClient.getUserById(auth, testUser.getId())).thenReturn(testUser);
 
         OrderDto created = createTestOrder();
+
         OrderDto result = orderService.getOrderById(auth, created.getId());
 
         assertEquals(created.getId(), result.getId());
@@ -174,17 +189,14 @@ class OrderServiceImplTest {
         order.setItems(new ArrayList<>());
         Order savedOrder = orderRepository.save(order);
 
-        final Long orderId = savedOrder.getId();
-
         when(userServiceClient.getUserById(auth, otherUser.getId())).thenReturn(otherUser);
         when(accessChecker.canAccessUser(any(), any())).thenReturn(false);
 
-        assertThrows(AccessDeniedException.class, () -> orderService.getOrderById(auth, orderId));
+        assertThrows(AccessDeniedException.class, () -> orderService.getOrderById(auth, savedOrder.getId()));
     }
 
     @Test
     void getOrders_noFilters_returnsAllPaged() {
-        when(userServiceClient.getUserByEmail(auth, "test@example.com")).thenReturn(testUser);
         when(userServiceClient.getUserById(auth, testUser.getId())).thenReturn(testUser);
 
         createTestOrder();
@@ -198,7 +210,6 @@ class OrderServiceImplTest {
 
     @Test
     void getOrders_withIdsFilter_returnsOnlyMatching() {
-        when(userServiceClient.getUserByEmail(auth, "test@example.com")).thenReturn(testUser);
         when(userServiceClient.getUserById(auth, testUser.getId())).thenReturn(testUser);
 
         OrderDto order1 = createTestOrder();
@@ -212,7 +223,6 @@ class OrderServiceImplTest {
 
     @Test
     void getOrders_withStatusesFilter_returnsMatching() {
-        when(userServiceClient.getUserByEmail(auth, "test@example.com")).thenReturn(testUser);
         when(userServiceClient.getUserById(auth, testUser.getId())).thenReturn(testUser);
 
         createTestOrder();
@@ -230,7 +240,6 @@ class OrderServiceImplTest {
 
     @Test
     void updateOrder_changeStatus_success() {
-        when(userServiceClient.getUserByEmail(auth, "test@example.com")).thenReturn(testUser);
         when(userServiceClient.getUserById(auth, testUser.getId())).thenReturn(testUser);
 
         OrderDto created = createTestOrder();
@@ -245,7 +254,6 @@ class OrderServiceImplTest {
 
     @Test
     void deleteOrder_success() {
-        when(userServiceClient.getUserByEmail(auth, "test@example.com")).thenReturn(testUser);
         when(userServiceClient.getUserById(auth, testUser.getId())).thenReturn(testUser);
 
         OrderDto created = createTestOrder();

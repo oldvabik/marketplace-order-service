@@ -22,7 +22,9 @@ import java.math.BigDecimal;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.kafka.bootstrap-servers=localhost:9092",
+})
 @ActiveProfiles("test")
 class ItemServiceImplTest {
 
