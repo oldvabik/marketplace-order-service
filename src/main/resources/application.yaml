@@ -22,7 +22,7 @@ spring:
     enabled: true
 
   kafka:
-    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
 
 jwt:
   secret: ${JWT_SECRET}
