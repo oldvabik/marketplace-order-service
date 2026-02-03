@@ -1,6 +1,3 @@
-server:
-  port: 8082
-
 spring:
   application:
     name: OrderService
@@ -23,9 +20,29 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: order-service-group
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.value.default.type: org.oldvabik.orderservice.event.CreatePaymentEvent
 
-jwt:
-  secret: ${JWT_SECRET}
+logging:
+  level:
+    org.apache.kafka: WARN
+    org.springframework.kafka: WARN
+
+app:
+  kafka:
+    create-order-topic: order-created-topic
+    create-payment-topic: payment-created-topic
+    order-group-id: order-service-group
 
 user:
   service:
@@ -47,8 +64,8 @@ resilience4j:
       user-service:
         timeout-duration: 3s
 
-app:
-  kafka:
-    create-order-topic: order-created-topic
-    create-payment-topic: payment-created-topic
-    order-group-id: order-service-group
+jwt:
+  secret: ${JWT_SECRET}
+
+server:
+  port: 8082
